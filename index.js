@@ -1,5 +1,5 @@
+const axios = require('axios');
 const Promise = require('bluebird');
-const request = require('request-promise');
 const _ = require('lodash');
 
 const rejectMissingUrl = () => Promise.reject(new Error('Missing url'));
@@ -16,51 +16,64 @@ module.exports = (accessToken) => {
   const isSandbox = (/^sandbox_/).test(accessToken);
   const baseUrl = isSandbox ? GOCARDLESS_SANDBOX_API_URL : GOCARDLESS_API_URL;
 
-  function _request(args) {
-    return request.defaults({
-      baseUrl,
-      json: true,
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'GoCardless-Version': '2015-07-06'
+  const instance = axios.create({
+    baseURL: baseUrl,
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'GoCardless-Version': '2015-07-06',
+      'Content-Type': 'application/json'
+    }
+  });
+
+  async function _request(config) {
+    try {
+      const response = await instance(config);
+      return response.data;
+    } catch (error) {
+      if (error.response) {
+        throw new Error(`Request failed with status code ${error.response.status}`);
       }
-    })(args).promise();
+      throw error;
+    }
   }
 
   return {
-    get(url, qs = {}, {isFile = false} = {}) {
+    get(url, params = {}, { isFile = false } = {}) {
       if (_.isEmpty(url)) {
         return rejectMissingUrl();
       }
 
-      const encoding = isFile ? {encoding: null} : {};
+      const responseType = isFile ? 'arraybuffer' : 'json';
 
-      const args = Object.assign({}, {url, method: 'GET', qs}, encoding);
-
-      return _request(args);
+      return _request({ url, method: 'GET', params, responseType });
     },
 
-    post(url, body, {isFile = false} = {}) {
+    post(url, data, { isFile = false } = {}) {
       if (_.isEmpty(url)) {
         return rejectMissingUrl();
       }
 
-      if (_.isEmpty(body)) {
+      if (_.isEmpty(data)) {
         return rejectMissingBody();
       }
 
+      const config = { url, method: 'POST' };
       if (isFile) {
-        return _request({url, method: 'POST', formData: body});
+        config.data = data;
+        config.headers = { 'Content-Type': 'multipart/form-data' };
+      } else {
+        config.data = data;
       }
-      return _request({url, method: 'POST', body});
+
+      return _request(config);
     },
 
-    put(url, body = {}) {
+    put(url, data = {}) {
       if (_.isEmpty(url)) {
         return rejectMissingUrl();
       }
 
-      return _request({url, method: 'PUT', body});
+      return _request({ url, method: 'PUT', data });
     },
 
     del(url) {
@@ -68,7 +81,7 @@ module.exports = (accessToken) => {
         return rejectMissingUrl();
       }
 
-      return _request({url, method: 'DELETE'});
+      return _request({ url, method: 'DELETE' });
     }
   };
 };
